@@ -1,60 +1,102 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Music, Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX } from "lucide-react";
 
 export default function BackgroundMusicPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasFile, setHasFile] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Initialize Audio element on mount
   useEffect(() => {
-    const audio = new Audio("/music/romantic.mp3");
-    audio.loop = true;
-    audio.preload = "auto";
+    try {
+      const audio = new Audio("/music/romantic.mp3");
+      audio.loop = true;
+      audio.preload = "auto";
+      audio.volume = 0.65; // Pleasant romantic background volume
 
-    audio.addEventListener("error", () => {
-      // Audio file might not exist yet; handle smoothly without breaking UI
-      setHasFile(false);
-    });
+      const handlePlaying = () => {
+        setIsPlaying(true);
+        setErrorMessage(null);
+      };
 
-    audioRef.current = audio;
+      const handlePause = () => {
+        setIsPlaying(false);
+      };
 
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
+      const handleError = (e: Event) => {
+        console.warn("[BackgroundMusicPlayer] Audio loading/playback error:", e);
+        // Do not permanently lock the button out; allow the user to retry
+      };
+
+      audio.addEventListener("playing", handlePlaying);
+      audio.addEventListener("pause", handlePause);
+      audio.addEventListener("error", handleError);
+
+      audioRef.current = audio;
+
+      return () => {
+        audio.removeEventListener("playing", handlePlaying);
+        audio.removeEventListener("pause", handlePause);
+        audio.removeEventListener("error", handleError);
+        audio.pause();
+        audio.src = "";
+      };
+    } catch (err) {
+      console.error("[BackgroundMusicPlayer] Failed to instantiate Audio:", err);
+    }
   }, []);
 
   const togglePlay = async () => {
-    if (!audioRef.current || !hasFile) return;
+    let audio = audioRef.current;
+    if (!audio) {
+      try {
+        audio = new Audio("/music/romantic.mp3");
+        audio.loop = true;
+        audio.preload = "auto";
+        audio.volume = 0.65;
+        audioRef.current = audio;
+      } catch (e) {
+        console.error("[BackgroundMusicPlayer] Fallback creation failed:", e);
+        return;
+      }
+    }
 
     try {
-      if (isPlaying) {
-        audioRef.current.pause();
+      if (!audio.paused) {
+        audio.pause();
         setIsPlaying(false);
       } else {
-        await audioRef.current.play();
+        // Reset src if it was cleared
+        if (!audio.src || audio.src.endsWith("/") || audio.src === window.location.href) {
+          audio.src = "/music/romantic.mp3";
+        }
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+        }
         setIsPlaying(true);
+        setErrorMessage(null);
       }
-    } catch {
-      // Audio playback failed (e.g. file missing or autoplay blocked)
+    } catch (err: unknown) {
+      console.error("[BackgroundMusicPlayer] Playback error encountered:", err);
       setIsPlaying(false);
+      if (err instanceof Error) {
+        setErrorMessage(err.message);
+      }
     }
   };
 
   return (
-    <div className="fixed top-5 right-5 z-50">
+    <div className="fixed top-5 right-5 z-[100] pointer-events-auto">
       <button
+        type="button"
         onClick={togglePlay}
-        title={
-          hasFile
-            ? isPlaying
-              ? "Pause romantic music"
-              : "Play romantic music"
-            : "Place romantic.mp3 into public/music/ to enable soundtrack"
-        }
-        className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-panel-glow text-pink-200 hover:text-white hover:border-pink-400 transition-all duration-300 shadow-lg active:scale-95 group text-sm font-medium"
+        aria-label={isPlaying ? "Pause romantic music" : "Play romantic music"}
+        title={isPlaying ? "Pause romantic music" : "Play romantic music"}
+        className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-panel-glow text-pink-200 hover:text-white hover:border-pink-400 transition-all duration-300 shadow-lg active:scale-95 group text-sm font-medium cursor-pointer select-none"
       >
         <span className="relative flex h-3 w-3">
           {isPlaying && (
@@ -71,7 +113,7 @@ export default function BackgroundMusicPlayer() {
         ) : (
           <VolumeX className="w-4 h-4 text-zinc-400 transition-transform group-hover:scale-110" />
         )}
-        <span className="hidden sm:inline">
+        <span className="inline">
           {isPlaying ? "Music Playing" : "Play Music"}
         </span>
       </button>
